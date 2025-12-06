@@ -44,6 +44,9 @@ Unlike Solidity (Ethereum) or Rust (Solana), Move:
 - Has no concept of "reentrancy attacks" due to linear types
 - Makes resource management explicit and safe
 
+## Version 
+**1.0** 
+
 ## Project Structure
 
 ```
