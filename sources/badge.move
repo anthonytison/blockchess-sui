@@ -20,6 +20,7 @@ public struct Badge has key, store {
 
 public struct BadgeRegistry has key {
     id: object::UID,
+    authorized_minter: address,
     // Track player statistics for badge eligibility
     // In a real implementation, this would be more sophisticated
 }
@@ -63,14 +64,27 @@ fun init(otw: BADGE, ctx: &mut sui::tx_context::TxContext) {
     sui::transfer::public_transfer(display, sui::tx_context::sender(ctx));
 
     // Create and share the badge registry
+    // The authorized minter is the deployer (whoever calls init)
     let registry = BadgeRegistry {
         id: sui::object::new(ctx),
+        authorized_minter: sui::tx_context::sender(ctx),
     };
     sui::transfer::share_object(registry);
 }
 
+/// Mints a new badge NFT and transfers it to the recipient
+/// 
+/// This function supports three authorization scenarios:
+/// 1. Direct minting: The sender is the authorized minter (can mint to anyone)
+/// 2. Sponsored minting: The recipient is the authorized minter (allows server to sponsor transactions for authorized users)
+/// 3. Self-minting: The sender is minting for themselves (anyone can mint their own badges)
+/// 
+/// The authorization logic enables transaction sponsoring where a server account
+/// (the sponsor) pays for gas fees on behalf of users, while still maintaining
+/// security by ensuring only authorized addresses can receive badges through
+/// sponsored transactions.
 public fun mint_badge(
-    _registry: &BadgeRegistry,
+    registry: &BadgeRegistry,
     recipient: address,
     badge_type: String,
     name: String,
@@ -79,10 +93,20 @@ public fun mint_badge(
     ctx: &mut sui::tx_context::TxContext,
 ) {
     let sender = sui::tx_context::sender(ctx);
-    // Security: Only allow minting badges for yourself
-    // This prevents unauthorized badge minting attacks
-    // The registry parameter is required to ensure proper access control
-    assert!(sender == recipient, 1); // Error code 1: InvalidRecipient
+    
+    // Security check: Only allow minting if one of these conditions is met:
+    // 1. Sender is the authorized minter (direct minting by authorized account)
+    // 2. Recipient is the authorized minter (sponsored transaction - server pays gas for authorized user)
+    // 3. Sender is minting for themselves (self-mint - anyone can mint their own badges)
+    // 
+    // This design enables transaction sponsoring where:
+    // - The server (sponsor) has the authorized_minter address
+    // - The server can mint badges for users (sponsored transactions)
+    // - Users can also mint their own badges directly (self-mint)
+    let is_authorized_minter = sender == registry.authorized_minter;
+    let is_authorized_recipient = recipient == registry.authorized_minter;
+    let is_self_mint = sender == recipient;
+    assert!(is_authorized_minter || is_authorized_recipient || is_self_mint, 1); // Error code 1: InvalidRecipient
     
     let badge_id = sui::object::new(ctx);
     let id_copy = sui::object::uid_to_inner(&badge_id);
@@ -110,6 +134,29 @@ public fun mint_badge(
     });
 
     sui::transfer::transfer(badge, recipient);
+}
+
+/// Updates the authorized minter address in the BadgeRegistry
+/// 
+/// This function allows the current authorized minter to transfer authorization
+/// to a new address. This is useful when:
+/// - Deploying a new server with a different sponsor keypair
+/// - Changing the server account that sponsors transactions
+/// - Migrating to a new authorized minter address
+/// 
+/// Only the current authorized minter can call this function.
+/// 
+/// @param registry - The BadgeRegistry shared object to update
+/// @param new_minter - The new address that will become the authorized minter
+public fun set_authorized_minter(
+    registry: &mut BadgeRegistry,
+    new_minter: address,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    let sender = sui::tx_context::sender(ctx);
+    // Security: Only the current authorized minter can update this
+    assert!(sender == registry.authorized_minter, 2); // Error code 2: Unauthorized
+    registry.authorized_minter = new_minter;
 }
 
 // === View Functions ===

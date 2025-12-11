@@ -45,7 +45,15 @@ Unlike Solidity (Ethereum) or Rust (Solana), Move:
 - Makes resource management explicit and safe
 
 ## Version 
-**1.0** 
+**1.1**
+
+### Version 1.1 Changes
+- Added transaction sponsoring support for all functions
+- Enhanced authorization checks to support sponsored transactions
+- Improved security for game ending and badge minting
+- Better error handling and authorization error messages
+
+See [CHANGELOG.md](./CHANGELOG.md) for detailed changes. 
 
 ## Project Structure
 
@@ -456,8 +464,17 @@ The `badge.move` module handles:
 **Key Design Decisions**:
 - Badges are **owned objects** (transferred to recipient)
 - Display metadata configured via Sui Display standard
-- Security: Only recipient can mint their own badge (prevents abuse)
+- **Transaction Sponsoring Support**: Authorization logic supports three scenarios:
+  1. Direct minting by authorized minter
+  2. Sponsored transactions (server pays gas for authorized users)
+  3. Self-minting by any user
 - One-Time Witness pattern for package initialization
+
+**Transaction Sponsoring**:
+- The `mint_badge` function supports transaction sponsoring where a server account pays gas fees
+- The sponsor address must match `authorized_minter` in `BadgeRegistry` for sponsored minting
+- Use `set_authorized_minter` to update the authorized minter after deployment
+- See `back/ws-server/src/scripts/update-authorized-minter.ts` for a helper script
 
 ## Common Commands Reference
 

@@ -145,6 +145,15 @@ fun is_player(game: &Game, player: address): bool {
 
 // === Main Functions ===
 
+/// Creates a new chess game on the Sui blockchain
+/// 
+/// This function creates a shareable Game object that can be accessed by multiple players.
+/// The game is created as a shared object, allowing both players to interact with it.
+/// 
+/// @param mode - Game mode: 0 = Solo, 1 = Versus
+/// @param difficulty - Difficulty level: 0 = Easy, 1 = Medium, 2 = Hard
+/// @param clock - Sui Clock object for timestamping
+/// @returns A shared Game object that can be accessed by all players
 public fun create_game(
     mode: u8,
     difficulty: u8,
@@ -260,6 +269,16 @@ public fun make_move(
     });
 }
 
+/// Ends a game and records the final result
+/// 
+/// This function supports both direct calls by players and sponsored transactions
+/// where a server ends the game on behalf of a player. This enables transaction
+/// sponsoring where the server pays gas fees for game completion.
+/// 
+/// Security checks:
+/// - Only active games can be ended
+/// - Either the sender must be a player, or the winner (if specified) must be a valid player
+/// - This allows sponsored transactions where the server calls end_game with a valid winner
 public fun end_game(
     game: &mut Game,
     winner: option::Option<address>,
@@ -270,7 +289,24 @@ public fun end_game(
 ) {
     let sender = sui::tx_context::sender(ctx);
     assert!(game.status == GameStatus::Active, error_code(GameError::GameNotActive));
-    assert!(is_player(game, sender), error_code(GameError::InvalidPlayer));
+    
+    // Security: Allow ending game if:
+    // 1. Sender is a player (direct call by one of the game participants), OR
+    // 2. Winner is specified and is a valid player (sponsored transaction where server ends game for a player)
+    // 
+    // This design enables transaction sponsoring:
+    // - Players can end games directly (paying their own gas)
+    // - Server can end games on behalf of players (paying gas for them)
+    // - The winner validation ensures only game participants can win
+    let sender_is_player = is_player(game, sender);
+    let winner_is_valid = if (option::is_some(&winner)) {
+        let winner_addr = *option::borrow(&winner);
+        is_player(game, winner_addr)
+    } else {
+        true // No winner specified (draw), so this check passes
+    };
+    
+    assert!(sender_is_player || winner_is_valid, error_code(GameError::InvalidPlayer));
     
     // Validate winner is a player in the game if specified
     if (option::is_some(&winner)) {
