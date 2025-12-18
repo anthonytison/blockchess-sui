@@ -1,5 +1,11 @@
 # Changelog - BlockChess Move Contracts
 
+## [1.2] - Optimization
+- Replace enum Errors by constants
+- Use dot notation
+- Import structures and functions on top of the files
+
+
 ## [1.1] - 2024
 
 ### Added

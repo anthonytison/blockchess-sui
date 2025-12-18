@@ -1,15 +1,17 @@
 module blockchess::badge;
 
-use std::string::{Self, String};
+use std::string::{String, utf8, into_bytes};
 use sui::display;
 use sui::event;
 use sui::package;
-use sui::url::{Self, Url};
+use sui::url::{Url, new_unsafe_from_bytes};
+use sui::object::{new, uid_to_inner};
+use sui::tx_context::sender;
 
 // === Structs ===
 
 public struct Badge has key, store {
-    id: object::UID,
+    id: sui::object::UID,
     badge_type: String,
     recipient: address,
     name: String,
@@ -19,7 +21,7 @@ public struct Badge has key, store {
 }
 
 public struct BadgeRegistry has key {
-    id: object::UID,
+    id: sui::object::UID,
     authorized_minter: address,
     // Track player statistics for badge eligibility
     // In a real implementation, this would be more sophisticated
@@ -28,7 +30,7 @@ public struct BadgeRegistry has key {
 // === Events ===
 
 public struct BadgeMinted has copy, drop {
-    badge_id: object::ID,
+    badge_id: sui::object::ID,
     recipient: address,
     badge_type: String,
     name: String,
@@ -43,31 +45,31 @@ public struct BADGE has drop {}
 
 fun init(otw: BADGE, ctx: &mut sui::tx_context::TxContext) {
     let keys = vector[
-        string::utf8(b"badge_type"),
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
+        utf8(b"badge_type"),
+        utf8(b"name"),
+        utf8(b"description"),
+        utf8(b"image_url"),
     ];
 
     let values = vector[
-        string::utf8(b"{badge_type}"),
-        string::utf8(b"{name}"),
-        string::utf8(b"{description}"),
-        string::utf8(b"{image_url}"),
+        utf8(b"{badge_type}"),
+        utf8(b"{name}"),
+        utf8(b"{description}"),
+        utf8(b"{image_url}"),
     ];
 
     let publisher = package::claim(otw, ctx);
     let mut display = display::new_with_fields<Badge>(&publisher, keys, values, ctx);
     display::update_version(&mut display);
 
-    sui::transfer::public_transfer(publisher, sui::tx_context::sender(ctx));
-    sui::transfer::public_transfer(display, sui::tx_context::sender(ctx));
+    sui::transfer::public_transfer(publisher, sender(ctx));
+    sui::transfer::public_transfer(display, sender(ctx));
 
     // Create and share the badge registry
     // The authorized minter is the deployer (whoever calls init)
     let registry = BadgeRegistry {
-        id: sui::object::new(ctx),
-        authorized_minter: sui::tx_context::sender(ctx),
+        id: new(ctx),
+        authorized_minter: sender(ctx),
     };
     sui::transfer::share_object(registry);
 }
@@ -92,7 +94,7 @@ public fun mint_badge(
     sourceUrl: String,
     ctx: &mut sui::tx_context::TxContext,
 ) {
-    let sender = sui::tx_context::sender(ctx);
+    let sender_addr = sender(ctx);
     
     // Security check: Only allow minting if one of these conditions is met:
     // 1. Sender is the authorized minter (direct minting by authorized account)
@@ -103,17 +105,17 @@ public fun mint_badge(
     // - The server (sponsor) has the authorized_minter address
     // - The server can mint badges for users (sponsored transactions)
     // - Users can also mint their own badges directly (self-mint)
-    let is_authorized_minter = sender == registry.authorized_minter;
+    let is_authorized_minter = sender_addr == registry.authorized_minter;
     let is_authorized_recipient = recipient == registry.authorized_minter;
-    let is_self_mint = sender == recipient;
+    let is_self_mint = sender_addr == recipient;
     assert!(is_authorized_minter || is_authorized_recipient || is_self_mint, 1); // Error code 1: InvalidRecipient
     
-    let badge_id = sui::object::new(ctx);
-    let id_copy = sui::object::uid_to_inner(&badge_id);
+    let badge_id = new(ctx);
+    let id_copy = uid_to_inner(&badge_id);
 
     // Convert the String to bytes
-    let bytes: vector<u8> = string::into_bytes(sourceUrl);  
-    let image_url = url::new_unsafe_from_bytes(bytes);
+    let bytes: vector<u8> = into_bytes(sourceUrl);  
+    let image_url = new_unsafe_from_bytes(bytes);
     
     let badge = Badge {
         id: badge_id,
@@ -153,9 +155,9 @@ public fun set_authorized_minter(
     new_minter: address,
     ctx: &mut sui::tx_context::TxContext,
 ) {
-    let sender = sui::tx_context::sender(ctx);
+    let sender_addr = sender(ctx);
     // Security: Only the current authorized minter can update this
-    assert!(sender == registry.authorized_minter, 2); // Error code 2: Unauthorized
+    assert!(sender_addr == registry.authorized_minter, 2); // Error code 2: Unauthorized
     registry.authorized_minter = new_minter;
 }
 
